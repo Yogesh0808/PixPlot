@@ -1,0 +1,243 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Professional SaaS Design System with Glassmorphism
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Core Background System */
+    --background: 225 25% 98%;
+    --background-secondary: 225 20% 96%;
+    --background-muted: 225 15% 94%;
+    --foreground: 225 15% 15%;
+    --foreground-muted: 225 10% 45%;
+
+    /* Glass Morphism Effects */
+    --glass-background: 0 0% 100% / 0.7;
+    --glass-border: 225 20% 80% / 0.2;
+    --glass-shadow: 225 25% 20% / 0.1;
+
+    /* Brand Colors - Deep Indigo Primary */
+    --primary: 225 75% 25%;
+    --primary-light: 225 75% 35%;
+    --primary-dark: 225 75% 15%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Electric Blue Accent */
+    --accent: 195 100% 50%;
+    --accent-light: 195 100% 60%;
+    --accent-dark: 195 100% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Status Colors */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* UI Elements */
+    --card: 0 0% 100% / 0.8;
+    --card-foreground: 225 15% 15%;
+    --border: 225 20% 85%;
+    --input: 225 25% 95%;
+    --ring: 195 100% 50%;
+    --muted: 225 15% 94%;
+    --muted-foreground: 225 10% 45%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(225 75% 25%), hsl(225 75% 35%));
+    --gradient-accent: linear-gradient(135deg, hsl(195 100% 50%), hsl(195 100% 60%));
+    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.15), hsl(0 0% 100% / 0.05));
+    --gradient-background: linear-gradient(135deg, hsl(225 25% 98%), hsl(225 20% 96%));
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(225 25% 20% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(225 25% 20% / 0.1), 0 2px 4px -1px hsl(225 25% 20% / 0.06);
+    --shadow-lg: 0 10px 15px -3px hsl(225 25% 20% / 0.1), 0 4px 6px -2px hsl(225 25% 20% / 0.05);
+    --shadow-glass: 0 8px 32px 0 hsl(225 25% 20% / 0.1);
+
+    /* Transitions */
+    --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --radius: 12px;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Dark mode with sophisticated dark theme */
+    --background: 225 25% 8%;
+    --background-secondary: 225 20% 10%;
+    --background-muted: 225 15% 12%;
+    --foreground: 225 15% 95%;
+    --foreground-muted: 225 10% 65%;
+
+    /* Dark Glass Morphism */
+    --glass-background: 225 25% 15% / 0.8;
+    --glass-border: 225 20% 30% / 0.2;
+    --glass-shadow: 225 25% 5% / 0.3;
+
+    /* Brand Colors - Adjusted for dark */
+    --primary: 225 75% 55%;
+    --primary-light: 225 75% 65%;
+    --primary-dark: 225 75% 45%;
+    --primary-foreground: 225 25% 8%;
+    
+    --accent: 195 100% 60%;
+    --accent-light: 195 100% 70%;
+    --accent-dark: 195 100% 50%;
+    --accent-foreground: 225 25% 8%;
+
+    --success: 142 76% 46%;
+    --warning: 38 92% 60%;
+    --destructive: 0 84% 70%;
+
+    --card: 225 25% 15% / 0.8;
+    --card-foreground: 225 15% 95%;
+    --border: 225 20% 20%;
+    --input: 225 25% 15%;
+    --ring: 195 100% 60%;
+    --muted: 225 15% 12%;
+    --muted-foreground: 225 10% 65%;
+
+    /* Dark Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(225 75% 55%), hsl(225 75% 65%));
+    --gradient-accent: linear-gradient(135deg, hsl(195 100% 60%), hsl(195 100% 70%));
+    --gradient-glass: linear-gradient(135deg, hsl(225 25% 20% / 0.2), hsl(225 25% 15% / 0.1));
+    --gradient-background: linear-gradient(135deg, hsl(225 25% 8%), hsl(225 20% 10%));
+
+    --shadow-glass: 0 8px 32px 0 hsl(225 25% 5% / 0.3);
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-gradient-to-br from-background to-background-secondary text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Glass morphism utility classes */
+  .glass {
+    background: hsl(var(--glass-background));
+    border: 1px solid hsl(var(--glass-border));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-card {
+    @apply glass rounded-2xl;
+  }
+
+  /* Custom animations */
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes pulse-soft {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200px 0;
+    }
+    100% {
+      background-position: calc(200px + 100%) 0;
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.5s ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.3s ease-out;
+  }
+
+  .animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
+  }
+
+  /* Hover effects */
+  .hover-glow {
+    transition: var(--transition-smooth);
+  }
+
+  .hover-glow:hover {
+    box-shadow: 0 0 20px hsl(var(--accent) / 0.3);
+  }
+
+  /* Step indicator styles */
+  .step-indicator {
+    @apply relative flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all duration-300;
+  }
+
+  .step-indicator.completed {
+    @apply bg-accent border-accent text-accent-foreground;
+  }
+
+  .step-indicator.active {
+    @apply bg-primary border-primary text-primary-foreground;
+  }
+
+  .step-indicator.inactive {
+    @apply bg-background border-border text-muted-foreground;
+  }
+}
