@@ -134,3 +134,9 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+#server Folders
+server/crops 
+server/previews
+server/uploads
+
