@@ -32,14 +32,22 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 PREVIEW_DIR.mkdir(exist_ok=True)
 CROP_DIR.mkdir(exist_ok=True)
 
+# Optimized DPI settings for higher quality
 HIGH_DPI = 600  # For high-res previews/crop coords
-STANDARD_DPI = 300  # For final output
+FINAL_OUTPUT_DPI = 900  # Increased for final TIFF output
+STANDARD_DPI = 300  # For compatibility
 CROP_TARGET_WIDTH = 900  # Low-res for frontend previews only
 CROP_TARGET_HEIGHT = 1200
-A4_WIDTH_PX = 2480  # A4 at 300 DPI
-A4_HEIGHT_PX = 3508
-A3_WIDTH_PX = A4_WIDTH_PX * 2
-A3_HEIGHT_PX = A4_HEIGHT_PX  # Landscape A3
+
+# A4 and A3 dimensions at different DPIs
+A4_WIDTH_300DPI = 2480  # A4 at 300 DPI
+A4_HEIGHT_300DPI = 3508
+A4_WIDTH_600DPI = 4960  # A4 at 600 DPI
+A4_HEIGHT_600DPI = 7016
+A4_WIDTH_900DPI = 7440  # A4 at 900 DPI
+A4_HEIGHT_900DPI = 10524
+A3_WIDTH_PX = A4_WIDTH_300DPI * 2
+A3_HEIGHT_PX = A4_HEIGHT_300DPI  # Landscape A3
 
 class PreviewPageRequest(BaseModel):
     file_id: str
@@ -87,7 +95,91 @@ def get_pdf_page_dimensions(pdf_path: Path, page_number: int):
         print(f"[Server] Error getting PDF page dimensions: {str(e)}")
         raise
 
+def crop_pdf_to_tiff_direct(file_id: str, page_number: int, crop_x: int, crop_y: int, crop_width: int, crop_height: int, output_dpi: int = FINAL_OUTPUT_DPI):
+    """
+    Directly crop from PDF to TIFF without intermediate image conversion for maximum quality
+    """
+    pdf_path = UPLOAD_DIR / f"{file_id}.pdf"
+    if not pdf_path.exists():
+        print(f"[Server] PDF not found: {file_id}")
+        raise HTTPException(status_code=404, detail=f"PDF not found: {file_id}")
+
+    if page_number < 1:
+        print(f"[Server] Invalid page number: {page_number}")
+        raise HTTPException(status_code=400, detail=f"Invalid page number: {page_number}")
+
+    if any(v < 0 for v in [crop_x, crop_y, crop_width, crop_height]):
+        print(f"[Server] Invalid crop coordinates: x={crop_x}, y={crop_y}, w={crop_width}, h={crop_height}")
+        raise HTTPException(status_code=400, detail="Crop coordinates cannot be negative")
+
+    try:
+        pdf_reader = PdfReader(pdf_path, strict=False)
+        total_pages = len(pdf_reader.pages)
+        if page_number > total_pages:
+            print(f"[Server] Page number {page_number} exceeds total pages {total_pages}")
+            raise HTTPException(status_code=400, detail=f"Page number {page_number} exceeds total pages {total_pages}")
+    except Exception as e:
+        print(f"[Server] Error validating page number: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate page number: {str(e)}")
+
+    try:
+        doc = fitz.open(pdf_path)
+        page = doc[page_number - 1]
+        pdf_width, pdf_height = get_pdf_page_dimensions(pdf_path, page_number)
+        
+        # Calculate zoom for high-quality output
+        zoom = output_dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+        
+        # Convert crop coordinates from HIGH_DPI to PDF points, then scale for output DPI
+        coord_zoom = HIGH_DPI / 72.0
+        output_coord_scale = zoom / coord_zoom
+        
+        rect = fitz.Rect(
+            crop_x / coord_zoom, 
+            crop_y / coord_zoom, 
+            (crop_x + crop_width) / coord_zoom, 
+            (crop_y + crop_height) / coord_zoom
+        )
+        
+        print(f"[Server] Direct PDF->TIFF: file={file_id}, page={page_number}, output_dpi={output_dpi}, pdf_dims={pdf_width}x{pdf_height}, crop_rect={rect}, zoom={zoom}")
+        
+        if rect.x1 > pdf_width or rect.y1 > pdf_height:
+            doc.close()
+            raise HTTPException(status_code=400, detail=f"Crop area exceeds page dimensions: rect={rect}, pdf_dims={pdf_width}x{pdf_height}")
+        
+        # Get high-quality pixmap directly from PDF
+        pix = page.get_pixmap(matrix=mat, clip=rect, alpha=False, colorspace=fitz.csGRAY)
+        
+        # Convert to PIL Image for processing
+        img = Image.frombytes("L", [pix.width, pix.height], pix.samples)
+        
+        # Apply optimized image processing for better quality
+        img = ImageEnhance.Contrast(img).enhance(1.3)  # Slightly reduced contrast enhancement
+        img = ImageEnhance.Sharpness(img).enhance(1.2)  # Add sharpness enhancement
+        
+        # Advanced thresholding for better quality
+        img = img.point(lambda x: 0 if x < 140 else 255, mode="1")  # Slightly lower threshold
+        
+        doc.close()
+        
+        # Check image dimensions
+        img_width, img_height = img.size
+        if img_width <= 0 or img_height <= 0:
+            print(f"[Server] Invalid image dimensions after cropping: {img_width}x{img_height}")
+            raise HTTPException(status_code=400, detail="Invalid crop dimensions")
+
+        print(f"[Server] Generated high-quality TIFF: mode={img.mode}, size={img.size}, dpi={output_dpi}")
+        return img
+        
+    except Exception as e:
+        print(f"[Server] Error in direct PDF->TIFF conversion for page {page_number}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to convert PDF to TIFF: {str(e)}")
+
 def crop_pdf_page(file_id: str, page_number: int, crop_x: int, crop_y: int, crop_width: int, crop_height: int, is_preview: bool = False):
+    """
+    Legacy function for preview generation - maintains compatibility
+    """
     pdf_path = UPLOAD_DIR / f"{file_id}.pdf"
     if not pdf_path.exists():
         print(f"[Server] PDF not found: {file_id}")
@@ -147,8 +239,30 @@ def crop_pdf_page(file_id: str, page_number: int, crop_x: int, crop_y: int, crop
         print(f"[Server] Error cropping image for page {page_number}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to crop image: {str(e)}")
 
+def process_single_pdf_crop_optimized(file_data, output_dpi: int = FINAL_OUTPUT_DPI):
+    """
+    Optimized function to process a single PDF crop directly to high-quality format
+    """
+    file_id = file_data.get("file_id")
+    page_number = file_data.get("page_number")
+    crop_data = file_data.get("crop", {})
+    
+    if not crop_data:
+        raise HTTPException(status_code=400, detail="Missing crop data")
+    
+    crop_x = crop_data.get("x", 0)
+    crop_y = crop_data.get("y", 0)
+    crop_width = crop_data.get("width", 100)
+    crop_height = crop_data.get("height", 100)
+
+    if not all([file_id, page_number]):
+        print(f"[Server] Missing file_id or page_number: {file_data}")
+        raise HTTPException(status_code=400, detail="Missing file_id or page_number")
+
+    return crop_pdf_to_tiff_direct(file_id, page_number, crop_x, crop_y, crop_width, crop_height, output_dpi)
+
 def process_single_pdf_crop(file_data):
-    """Process a single PDF crop and return the processed image"""
+    """Legacy function for backwards compatibility"""
     file_id = file_data.get("file_id")
     page_number = file_data.get("page_number")
     crop_data = file_data.get("crop", {})
@@ -400,7 +514,7 @@ async def crop_image(request: CropRequest):
 
 @app.post("/process")
 async def process_tiff(request: ProcessRequest):
-    """New endpoint to handle both A4 and A3 processing"""
+    """Optimized endpoint to handle both A4 and A3 processing with direct PDF->TIFF conversion"""
     print(f"[Server] Received /process request: {request.dict()}")
     
     format_type = request.format
@@ -419,38 +533,64 @@ async def process_tiff(request: ProcessRequest):
         images = []
         file_ids = []
         
-        # Process each file
+        # Process each file using optimized direct PDF->TIFF conversion
         for file_data in files:
-            processed_img = process_single_pdf_crop(file_data)
+            processed_img = process_single_pdf_crop_optimized(file_data, FINAL_OUTPUT_DPI)
             images.append(processed_img)
             file_ids.append(file_data["file_id"].split("_")[0])
 
         # Create final TIFF based on format
         if format_type == "A4":
-            # For A4, resize to proper A4 dimensions at 300 DPI
-            final_img = images[0].resize((A4_WIDTH_300DPI, A4_HEIGHT_300DPI), Image.Resampling.LANCZOS)
+            # For A4, use the high-quality image directly
+            final_img = images[0]
+            # Optionally resize to standard A4 dimensions if needed
+            # final_img = images[0].resize((A4_WIDTH_900DPI, A4_HEIGHT_900DPI), Image.Resampling.LANCZOS)
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             tiff_filename = f"AusNet_A4_{sanitize_filename(file_ids[0])}_{timestamp}.tiff"
         else:
-            # For A3, merge two images side by side
-            final_img = Image.new("1", (CROP_TARGET_WIDTH * 2, CROP_TARGET_HEIGHT), color=255)
-            x_offset = 0
-            for img in images:
-                final_img.paste(img, (x_offset, 0))
-                x_offset += img.width
+            # For A3, merge two high-quality images side by side
+            img1, img2 = images
+            
+            # Resize both images to same height to eliminate whitespace
+            target_height = min(img1.height, img2.height)  # Use minimum height to avoid stretching
+            
+            # Resize images maintaining aspect ratio if needed
+            if img1.height != target_height:
+                aspect_ratio = img1.width / img1.height
+                img1 = img1.resize((int(target_height * aspect_ratio), target_height), Image.Resampling.LANCZOS)
+            
+            if img2.height != target_height:
+                aspect_ratio = img2.width / img2.height
+                img2 = img2.resize((int(target_height * aspect_ratio), target_height), Image.Resampling.LANCZOS)
+            
+            total_width = img1.width + img2.width
+            
+            # Create final image with exact dimensions - no extra whitespace
+            final_img = Image.new("1", (total_width, target_height), color=255)
+            final_img.paste(img1, (0, 0))
+            final_img.paste(img2, (img1.width, 0))
+            
             timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             tiff_filename = f"AusNet_A3_{sanitize_filename(file_ids[0])}_{sanitize_filename(file_ids[1])}_{timestamp}.tiff"
 
         tiff_path = CROP_DIR / tiff_filename
-        final_img.save(tiff_path, format="TIFF", compression="tiff_lzw", dpi=(STANDARD_DPI, STANDARD_DPI))
+        
+        # Save with highest quality settings
+        final_img.save(
+            tiff_path, 
+            format="TIFF", 
+            compression="tiff_lzw",  # Lossless compression
+            dpi=(FINAL_OUTPUT_DPI, FINAL_OUTPUT_DPI),
+            optimize=True
+        )
 
         response = {"tiff": f"/crops/{tiff_filename}"}
-        print(f"[Server] Process response: {response}")
-        print(f"[Server] Generated {format_type} TIFF: mode={final_img.mode}, size={final_img.size}, dpi={final_img.info.get('dpi')}")
+        print(f"[Server] Optimized process response: {response}")
+        print(f"[Server] Generated high-quality {format_type} TIFF: mode={final_img.mode}, size={final_img.size}, dpi={FINAL_OUTPUT_DPI}")
         return response
 
     except Exception as e:
-        print(f"[Server] Error processing {format_type} TIFF: {str(e)}")
+        print(f"[Server] Error processing optimized {format_type} TIFF: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process {format_type} TIFF: {str(e)}")
 
 @app.post("/merge")
@@ -460,7 +600,7 @@ async def merge_pdf(request: MergeRequest):
     if not files or len(files) != 2:
         raise HTTPException(status_code=400, detail="Exactly two files required")
 
-    # Convert to new format and call process endpoint
+    # Convert to new format and call optimized process endpoint
     process_request = ProcessRequest(
         format="A3",
         files=[
