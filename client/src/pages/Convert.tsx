@@ -1,8 +1,9 @@
-import React from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import React, { useContext, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useFormat } from "@/components/ui/format-selector";
+import { FileContext } from "@/App";
 import { 
   Download, 
   CheckCircle, 
@@ -11,24 +12,31 @@ import {
   Settings,
   Zap,
   Award,
-  Monitor
+  Monitor,
+  Upload
 } from "lucide-react";
 
-const Convert: React.FC = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { files, tiffUrl } = location.state || {};
-  const [tiffFilename, setTiffFilename] = React.useState<string | null>(null);
+const Convert = () => {
+  const { files } = useContext(FileContext);
+  const { selectedFormat } = useFormat();
+  const [tiffUrl, setTiffUrl] = useState(null);
+  const [tiffFilename, setTiffFilename] = useState(null);
 
-  React.useEffect(() => {
-    if (tiffUrl) {
-      const filename = tiffUrl.split("/").pop() || "merged_output.tiff";
-      setTiffFilename(filename);
-      console.log("[Convert] TIFF available:", filename);
-    }
-  }, [tiffUrl]);
+  useEffect(() => {
+  const tiffParam = new URLSearchParams(window.location.search).get("tiff");
+  if (tiffParam) {
+    const decoded = decodeURIComponent(tiffParam);
+    setTiffUrl(decoded.startsWith("http") ? decoded : `http://localhost:4000${decoded}`);
+    setTiffFilename(decoded.split("/").pop() || `${selectedFormat.toLowerCase()}_output.tiff`);
+  }
+}, [selectedFormat]);
 
-  if (!files || files.length !== 2 || !tiffUrl) {
+  const requiredFiles = selectedFormat === 'A4' ? 1 : 2;
+  const hasRequiredCrops = selectedFormat === 'A4' 
+    ? sessionStorage.getItem("crop1")
+    : sessionStorage.getItem("crop1") && sessionStorage.getItem("crop2");
+
+  if (!files || files.length < requiredFiles || !hasRequiredCrops || !tiffUrl) {
     return (
       <div className="flex-1 p-8">
         <div className="max-w-4xl mx-auto">
@@ -37,11 +45,11 @@ const Convert: React.FC = () => {
               <FileImage className="h-20 w-20 mx-auto text-muted-foreground mb-6" />
               <h2 className="text-3xl font-bold text-destructive mb-4">No TIFF File Available</h2>
               <p className="text-lg text-muted-foreground max-w-md mx-auto">
-                Please complete the cropping and merging process first to generate your TIFF file.
+                Please complete the cropping and processing steps first to generate your {selectedFormat} TIFF file.
               </p>
             </div>
             <Button
-              onClick={() => navigate("/")}
+              onClick={() => window.location.href = '/'}
               size="lg"
               className="bg-gradient-primary text-primary-foreground px-8"
             >
@@ -63,21 +71,26 @@ const Convert: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("TIFF file downloaded successfully");
+    toast.success(`${selectedFormat} TIFF file downloaded successfully`);
   };
 
   const handleStartOver = () => {
     // Clear session storage
     sessionStorage.removeItem("crop1");
     sessionStorage.removeItem("crop2");
-    navigate("/");
+    window.location.href = '/';
   };
 
-  const specs = [
-    { label: "Format", value: "TIFF", color: "bg-green-500" },
+  const specs = selectedFormat === 'A4' ? [
+    { label: "Format", value: "A4", color: "bg-green-500" },
     { label: "DPI", value: "300", color: "bg-blue-500" },
     { label: "Mode", value: "Mono", color: "bg-purple-500" },
-    { label: "Size", value: "1800×1200", color: "bg-orange-500" }
+    { label: "Size", value: "2480×3508", color: "bg-orange-500" }
+  ] : [
+    { label: "Format", value: "A3", color: "bg-green-500" },
+    { label: "DPI", value: "300", color: "bg-blue-500" },
+    { label: "Mode", value: "Mono", color: "bg-purple-500" },
+    { label: "Size", value: "3508×4961", color: "bg-orange-500" }
   ];
 
   return (
@@ -91,10 +104,13 @@ const Convert: React.FC = () => {
             Step 3 of 3 - Complete
           </div>
           <h1 className="text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Your TIFF File is Ready
+            Your {selectedFormat} TIFF File is Ready
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Successfully merged and optimized for AutoCAD templates with professional specifications.
+            {selectedFormat === 'A4' 
+              ? "Successfully processed your PDF with professional A4 specifications for AutoCAD templates."
+              : "Successfully merged and optimized for AutoCAD templates with professional A3 specifications."
+            }
           </p>
           
           {/* File Info with Specs */}
@@ -107,7 +123,7 @@ const Convert: React.FC = () => {
                   </div>
                   <div className="text-left">
                     <div className="font-medium text-sm">{tiffFilename}</div>
-                    <div className="text-xs text-muted-foreground">Monochrome TIFF • LZW Compressed</div>
+                    <div className="text-xs text-muted-foreground">Monochrome TIFF • LZW Compressed • {selectedFormat}</div>
                   </div>
                 </div>
                 <div className="flex gap-1">
@@ -126,8 +142,8 @@ const Convert: React.FC = () => {
 
         {/* Preview Section */}
         <div className="flex justify-center">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl w-full">
-            {files.map((file: any, index: number) => {
+          <div className={selectedFormat === 'A4' ? "max-w-2xl w-full" : "grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl w-full"}>
+            {files.slice(0, requiredFiles).map((file, index) => {
               const cropData = JSON.parse(sessionStorage.getItem(`crop${index + 1}`) || "{}");
               return (
                 <div key={index} className="glass-card p-6 border-border/50">
@@ -136,7 +152,9 @@ const Convert: React.FC = () => {
                       {index + 1}
                     </div>
                     <div>
-                      <h3 className="font-semibold">PDF {index + 1}</h3>
+                      <h3 className="font-semibold">
+                        {selectedFormat === 'A4' ? 'PDF' : `PDF ${index + 1}`}
+                      </h3>
                       <p className="text-sm text-muted-foreground">Page {file.pageNumber}</p>
                     </div>
                     <div className="ml-auto">
@@ -147,11 +165,11 @@ const Convert: React.FC = () => {
                     </div>
                   </div>
                   
-                  {file.croppedImage ? (
+                  {cropData.croppedImage ? (
                     <div className="space-y-3">
                       <div className="relative w-full max-w-[280px] mx-auto">
                         <img
-                          src={file.croppedImage}
+                          src={cropData.croppedImage}
                           alt={`Cropped PDF ${index + 1}`}
                           className="w-full h-auto rounded-xl border border-border/50 shadow-lg"
                           style={{ imageRendering: "pixelated" }}
@@ -162,7 +180,7 @@ const Convert: React.FC = () => {
                       </div>
                       <div className="text-center space-y-1">
                         <div className="text-sm font-medium text-foreground">
-                          900×1200 pixels (3:4 ratio)
+                          {selectedFormat === 'A4' ? '2480×3508 pixels (A4)' : '900×1200 pixels (3:4 ratio)'}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           Optimized for AutoCAD compatibility
@@ -192,7 +210,7 @@ const Convert: React.FC = () => {
             disabled={!tiffUrl}
           >
             <Download className="h-5 w-5" />
-            Download TIFF File
+            Download {selectedFormat} TIFF File
           </Button>
           
           <Button
@@ -202,11 +220,11 @@ const Convert: React.FC = () => {
             className="px-8 py-4 text-lg border-border/50 hover:bg-muted/50 flex items-center gap-3"
           >
             <RotateCcw className="h-5 w-5" />
-            Process Another Set
+            Process Another {selectedFormat === 'A4' ? 'File' : 'Set'}
           </Button>
         </div>
 
-        {/* Quick AutoCAD Tips */}
+        {/* AutoCAD Integration Tips */}
         <div className="glass-card p-6 border-border/50 max-w-4xl mx-auto">
           <div className="flex items-start gap-3 mb-3">
             <div className="p-2 bg-blue-500/10 rounded-lg">
@@ -214,7 +232,7 @@ const Convert: React.FC = () => {
             </div>
             <div>
               <h3 className="font-semibold text-lg">AutoCAD Integration</h3>
-              <p className="text-sm text-muted-foreground">Quick setup instructions</p>
+              <p className="text-sm text-muted-foreground">Quick setup instructions for {selectedFormat} format</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -235,7 +253,7 @@ const Convert: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Zap className="h-4 w-4 text-orange-500" />
-                <span>Ready for professional templates</span>
+                <span>Ready for {selectedFormat} templates</span>
               </div>
             </div>
           </div>

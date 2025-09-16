@@ -32,10 +32,14 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 PREVIEW_DIR.mkdir(exist_ok=True)
 CROP_DIR.mkdir(exist_ok=True)
 
-HIGH_DPI = 600  # High DPI for quality rendering
-STANDARD_DPI = 300
-CROP_TARGET_WIDTH = 900
+HIGH_DPI = 600  # For high-res previews/crop coords
+STANDARD_DPI = 300  # For final output
+CROP_TARGET_WIDTH = 900  # Low-res for frontend previews only
 CROP_TARGET_HEIGHT = 1200
+A4_WIDTH_PX = 2480  # A4 at 300 DPI
+A4_HEIGHT_PX = 3508
+A3_WIDTH_PX = A4_WIDTH_PX * 2
+A3_HEIGHT_PX = A4_HEIGHT_PX  # Landscape A3
 
 class PreviewPageRequest(BaseModel):
     file_id: str
@@ -50,6 +54,10 @@ class CropRequest(BaseModel):
     crop_height: int
 
 class MergeRequest(BaseModel):
+    files: list[dict]
+
+class ProcessRequest(BaseModel):
+    format: str
     files: list[dict]
 
 def sanitize_filename(name: str) -> str:
@@ -138,6 +146,75 @@ def crop_pdf_page(file_id: str, page_number: int, crop_x: int, crop_y: int, crop
     except Exception as e:
         print(f"[Server] Error cropping image for page {page_number}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to crop image: {str(e)}")
+
+def process_single_pdf_crop(file_data):
+    """Process a single PDF crop and return the processed image"""
+    file_id = file_data.get("file_id")
+    page_number = file_data.get("page_number")
+    crop_data = file_data.get("crop", {})
+    
+    if not crop_data:
+        raise HTTPException(status_code=400, detail="Missing crop data")
+    
+    crop_x = crop_data.get("x", 0)
+    crop_y = crop_data.get("y", 0)
+    crop_width = crop_data.get("width", 100)
+    crop_height = crop_data.get("height", 100)
+
+    if not all([file_id, page_number]):
+        print(f"[Server] Missing file_id or page_number: {file_data}")
+        raise HTTPException(status_code=400, detail="Missing file_id or page_number")
+
+    pdf_path = UPLOAD_DIR / f"{file_id}.pdf"
+    if not pdf_path.exists():
+        print(f"[Server] PDF not found: {file_id}")
+        raise HTTPException(status_code=404, detail=f"PDF not found: {file_id}")
+
+    try:
+        pdf_reader = PdfReader(pdf_path, strict=False)
+        total_pages = len(pdf_reader.pages)
+        if page_number > total_pages:
+            print(f"[Server] Page number {page_number} exceeds total pages {total_pages}")
+            raise HTTPException(status_code=400, detail=f"Page number {page_number} exceeds total pages {total_pages}")
+    except Exception as e:
+        print(f"[Server] Error validating page number: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate page number: {str(e)}")
+
+    try:
+        doc = fitz.open(pdf_path)
+        page = doc[page_number - 1]
+        pdf_width, pdf_height = get_pdf_page_dimensions(pdf_path, page_number)
+        zoom = HIGH_DPI / 72
+        mat = fitz.Matrix(zoom, zoom)
+        rect = fitz.Rect(crop_x / zoom, crop_y / zoom, (crop_x + crop_width) / zoom, (crop_y + crop_height) / zoom)
+        
+        print(f"[Server] Processing PDF: file={file_id}, page={page_number}, pdf_dims={pdf_width}x{pdf_height}, crop_rect={rect}, zoom={zoom}")
+        
+        if rect.x1 > pdf_width or rect.y1 > pdf_height:
+            doc.close()
+            raise HTTPException(status_code=400, detail=f"Crop area exceeds page dimensions: rect={rect}, pdf_dims={pdf_width}x{pdf_height}")
+        
+        pix = page.get_pixmap(matrix=mat, clip=rect)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        doc.close()
+        
+        # Check image dimensions
+        img_width, img_height = img.size
+        if img_width <= 0 or img_height <= 0:
+            print(f"[Server] Invalid image dimensions after cropping: {img_width}x{img_height}")
+            raise HTTPException(status_code=400, detail="Invalid crop dimensions")
+
+        # Process the image based on format
+        processed_img = img.resize((CROP_TARGET_WIDTH, CROP_TARGET_HEIGHT), Image.Resampling.LANCZOS)
+        processed_img = processed_img.convert("L")
+        processed_img = ImageEnhance.Contrast(processed_img).enhance(1.5)
+        processed_img = processed_img.point(lambda x: 0 if x < 150 else 255, mode="1")
+        
+        return processed_img
+        
+    except Exception as e:
+        print(f"[Server] Error processing PDF {file_id} page {page_number}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
 
 @app.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -238,7 +315,7 @@ async def generate_preview_page(request: PreviewPageRequest):
         if not preview_path.exists():
             doc = fitz.open(pdf_path)
             page = doc[page_number - 1]
-            zoom = 100 / 72  # Low DPI for preview
+            zoom = 200 / 72  # Low DPI for preview
             mat = fitz.Matrix(zoom, zoom)
             pix = page.get_pixmap(matrix=mat)
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
@@ -321,89 +398,89 @@ async def crop_image(request: CropRequest):
         is_preview=False
     )
 
+@app.post("/process")
+async def process_tiff(request: ProcessRequest):
+    """New endpoint to handle both A4 and A3 processing"""
+    print(f"[Server] Received /process request: {request.dict()}")
+    
+    format_type = request.format
+    files = request.files
+    
+    if format_type not in ["A4", "A3"]:
+        raise HTTPException(status_code=400, detail="Format must be A4 or A3")
+    
+    if format_type == "A4" and len(files) != 1:
+        raise HTTPException(status_code=400, detail="A4 format requires exactly one file")
+    
+    if format_type == "A3" and len(files) != 2:
+        raise HTTPException(status_code=400, detail="A3 format requires exactly two files")
+
+    try:
+        images = []
+        file_ids = []
+        
+        # Process each file
+        for file_data in files:
+            processed_img = process_single_pdf_crop(file_data)
+            images.append(processed_img)
+            file_ids.append(file_data["file_id"].split("_")[0])
+
+        # Create final TIFF based on format
+        if format_type == "A4":
+            # For A4, resize to proper A4 dimensions at 300 DPI
+            final_img = images[0].resize((A4_WIDTH_300DPI, A4_HEIGHT_300DPI), Image.Resampling.LANCZOS)
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            tiff_filename = f"AusNet_A4_{sanitize_filename(file_ids[0])}_{timestamp}.tiff"
+        else:
+            # For A3, merge two images side by side
+            final_img = Image.new("1", (CROP_TARGET_WIDTH * 2, CROP_TARGET_HEIGHT), color=255)
+            x_offset = 0
+            for img in images:
+                final_img.paste(img, (x_offset, 0))
+                x_offset += img.width
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            tiff_filename = f"AusNet_A3_{sanitize_filename(file_ids[0])}_{sanitize_filename(file_ids[1])}_{timestamp}.tiff"
+
+        tiff_path = CROP_DIR / tiff_filename
+        final_img.save(tiff_path, format="TIFF", compression="tiff_lzw", dpi=(STANDARD_DPI, STANDARD_DPI))
+
+        response = {"tiff": f"/crops/{tiff_filename}"}
+        print(f"[Server] Process response: {response}")
+        print(f"[Server] Generated {format_type} TIFF: mode={final_img.mode}, size={final_img.size}, dpi={final_img.info.get('dpi')}")
+        return response
+
+    except Exception as e:
+        print(f"[Server] Error processing {format_type} TIFF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process {format_type} TIFF: {str(e)}")
+
 @app.post("/merge")
 async def merge_pdf(request: MergeRequest):
+    """Legacy endpoint for backwards compatibility"""
     files = request.files
     if not files or len(files) != 2:
         raise HTTPException(status_code=400, detail="Exactly two files required")
 
-    images = []
-    for file_data in files:
-        file_id = file_data.get("file_id")
-        page_number = file_data.get("page_number")
-        crop_x = file_data.get("crop_x", 0)
-        crop_y = file_data.get("crop_y", 0)
-        crop_width = file_data.get("crop_width", 100)
-        crop_height = file_data.get("crop_height", 100)
-
-        if not all([file_id, page_number]):
-            print(f"[Server] Missing file_id or page_number: {file_data}")
-            raise HTTPException(status_code=400, detail="Missing file_id or page_number")
-
-        pdf_path = UPLOAD_DIR / f"{file_id}.pdf"
-        if not pdf_path.exists():
-            print(f"[Server] PDF not found: {file_id}")
-            raise HTTPException(status_code=404, detail=f"PDF not found: {file_id}")
-
-        try:
-            pdf_reader = PdfReader(pdf_path, strict=False)
-            total_pages = len(pdf_reader.pages)
-            if page_number > total_pages:
-                print(f"[Server] Page number {page_number} exceeds total pages {total_pages}")
-                raise HTTPException(status_code=400, detail=f"Page number {page_number} exceeds total pages {total_pages}")
-        except Exception as e:
-            print(f"[Server] Error validating page number: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to validate page number: {str(e)}")
-
-        try:
-            doc = fitz.open(pdf_path)
-            page = doc[page_number - 1]
-            pdf_width, pdf_height = get_pdf_page_dimensions(pdf_path, page_number)
-            zoom = HIGH_DPI / 72
-            mat = fitz.Matrix(zoom, zoom)
-            rect = fitz.Rect(crop_x / zoom, crop_y / zoom, (crop_x + crop_width) / zoom, (crop_y + crop_height) / zoom)
-            
-            print(f"[Server] Merging PDF: file={file_id}, page={page_number}, pdf_dims={pdf_width}x{pdf_height}, crop_rect={rect}, zoom={zoom}")
-            
-            if rect.x1 > pdf_width or rect.y1 > pdf_height:
-                doc.close()
-                raise HTTPException(status_code=400, detail=f"Crop area exceeds page dimensions: rect={rect}, pdf_dims={pdf_width}x{pdf_height}")
-            
-            pix = page.get_pixmap(matrix=mat, clip=rect)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            img_width, img_height = img.size
-
-            if img_width <= 0 or img_height <= 0:
-                print(f"[Server] Invalid image dimensions after cropping: нужно указать ширину и высоту {img_width}x{img_height}")
-                raise HTTPException(status_code=400, detail="Invalid crop dimensions")
-
-            cropped_img = img.resize((CROP_TARGET_WIDTH, CROP_TARGET_HEIGHT), Image.Resampling.LANCZOS)
-            cropped_img = cropped_img.convert("L")
-            cropped_img = ImageEnhance.Contrast(cropped_img).enhance(1.5)
-            cropped_img = cropped_img.point(lambda x: 0 if x < 150 else 255, mode="1")
-            images.append(cropped_img)
-            doc.close()
-        except Exception as e:
-            print(f"[Server] Error processing PDF {file_id} page {page_number}: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
-
-    merged_img = Image.new("1", (CROP_TARGET_WIDTH * 2, CROP_TARGET_HEIGHT), color=255)
-    x_offset = 0
-    for img in images:
-        merged_img.paste(img, (x_offset, 0))
-        x_offset += img.width
-
-    pdf_names = [sanitize_filename(file_data["file_id"].split("_")[0]) for file_data in files]
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    tiff_filename = f"AusNet_{pdf_names[0]}_{pdf_names[1]}_{timestamp}.tiff"
-    tiff_path = CROP_DIR / tiff_filename
-
-    merged_img.save(tiff_path, format="TIFF", compression="tiff_lzw", dpi=(STANDARD_DPI, STANDARD_DPI))
-
-    response = {"tiff_file": f"/crops/{tiff_filename}"}
-    print(f"[Server] Merge response: {response}")
-    print(f"[Server] Merged TIFF details: mode={merged_img.mode}, size={merged_img.size}, dpi={merged_img.info.get('dpi')}")
-    return response
+    # Convert to new format and call process endpoint
+    process_request = ProcessRequest(
+        format="A3",
+        files=[
+            {
+                "file_id": file_data.get("file_id"),
+                "page_number": file_data.get("page_number"),
+                "crop": {
+                    "x": file_data.get("crop_x", 0),
+                    "y": file_data.get("crop_y", 0),
+                    "width": file_data.get("crop_width", 100),
+                    "height": file_data.get("crop_height", 100)
+                }
+            }
+            for file_data in files
+        ]
+    )
+    
+    result = await process_tiff(process_request)
+    # Convert response format for compatibility
+    return {"tiff_file": result["tiff"]}
 
 @app.on_event("startup")
 async def cleanup_old_files():

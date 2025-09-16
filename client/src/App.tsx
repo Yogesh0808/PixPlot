@@ -25,69 +25,51 @@ const App = () => {
   const [files, setFiles] = useState<(File & { serverId?: string; serverPath?: string; pageNumber?: number; totalPages?: number; preview?: string })[]>([]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <style>
-          {`
-            @keyframes dialog-enter {
-              from {
-                opacity: 0;
-                transform: translate(-50%, -50%) scale(0.95);
-              }
-              to {
-                opacity: 1;
-                transform: translate(-50%, -50%) scale(1);
-              }
-            }
-            @keyframes dialog-exit {
-              from {
-                opacity: 1;
-                transform: translate(-50%, -50%) scale(1);
-              }
-              to {
-                opacity: 0;
-                transform: translate(-50%, -50%) scale(0.95);
-              }
-            }
-            .animate-dialog {
-              animation: dialog-enter 0.3s ease-out forwards;
-            }
-            .animate-dialog-exit {
-              animation: dialog-exit 0.3s ease-in forwards;
-            }
-          `}
-        </style>
-        <BrowserRouter>
-          <SidebarProvider>
-            <FileContext.Provider value={{ files, setFiles }}>
-              <div className="min-h-screen flex w-full">
-                <AppSidebar />
-                <main className="flex-1">
-                  <header className="h-14 border-b border-border/50 glass flex items-center px-6">
-                    <SidebarTrigger />
-                    <div className="ml-8">
-                      <h2 className="font-semibold text-lg">PDF to TIFF Converter</h2>
-                      <p className="text-sm text-muted-foreground">Professional document processing</p>
-                    </div>
-                  </header>
-                  <div className="min-h-screen p-8 animate-fade-in-up">
-                    <Routes>
-                      <Route path="/" element={<Upload />} />
-                      <Route path="/crop" element={<Crop />} />
-                      <Route path="/convert" element={<Convert />} />
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <SidebarProvider>
+          <FileContext.Provider value={{ files, setFiles }}>
+            <div className="min-h-screen flex w-full">
+              <AppSidebar />
+
+              <main className="flex-1 flex flex-col">
+                {/* Header */}
+                <header
+                  className="h-14 border-b border-border/50 glass
+                             flex items-center px-6 shadow-soft backdrop-blur-md"
+                >
+                  <SidebarTrigger />
+                  <div className="ml-8">
+                    <h2 className="font-semibold text-lg">
+                      PDF to TIFF Converter
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Professional document processing
+                    </p>
                   </div>
-                </main>
-              </div>
-            </FileContext.Provider>
-          </SidebarProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  );
+                </header>
+
+                {/* Page Content with smooth fade */}
+                <div className="min-h-screen p-8 animate-fade-in-up">
+                  <Routes>
+                    <Route path="/" element={<Upload />} />
+                    <Route path="/crop" element={<Crop />} />
+                    <Route path="/convert" element={<Convert />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </div>
+              </main>
+            </div>
+          </FileContext.Provider>
+        </SidebarProvider>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
+);
+
 };
 
 export default App;

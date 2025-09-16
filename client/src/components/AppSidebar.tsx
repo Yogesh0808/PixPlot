@@ -12,39 +12,68 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { FileContext } from "@/App";
-import { Upload, Crop, Download, ChevronRight, Check } from "lucide-react";
-
-const steps = [
-  { title: "Upload PDFs", url: "/", icon: Upload, description: "Select two PDF files" },
-  { title: "Crop PDFs", url: "/crop", icon: Crop, description: "Define crop areas" },
-  { title: "Merge & Convert", url: "/convert", icon: Download, description: "Generate TIFF file" },
-];
+import { useFormat } from "@/components/ui/format-selector";
+import { Upload, Crop, Download, ChevronRight, Check, Settings } from "lucide-react";
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const { files } = useContext(FileContext);
+  const { selectedFormat } = useFormat();
   const location = useLocation();
   const currentPath = location.pathname;
   const collapsed = state === "collapsed";
 
-  // Log FileContext for debugging
-  console.log("[AppSidebar] FileContext files:", files);
+  const getSteps = () => {
+    if (selectedFormat === 'A4') {
+      return [
+        { title: "Upload PDF", url: "/", icon: Upload, description: "Select one PDF file" },
+        { title: "Crop PDF", url: "/crop", icon: Crop, description: "Define crop area" },
+        { title: "Download TIFF", url: "/convert", icon: Download, description: "Get A4 TIFF file" },
+      ];
+    } else {
+      return [
+        { title: "Upload PDFs", url: "/", icon: Upload, description: "Select two PDF files" },
+        { title: "Crop PDFs", url: "/crop", icon: Crop, description: "Define crop areas" },
+        { title: "Merge & Convert", url: "/convert", icon: Download, description: "Get A3 TIFF file" },
+      ];
+    }
+  };
+
+  const steps = getSteps();
+  const requiredFiles = selectedFormat === 'A4' ? 1 : 2;
 
   const getStepStatus = (stepUrl: string) => {
     if (stepUrl === "/") {
-      if (files.length === 2 && files.every(f => f.pageNumber)) {
+      if (files.length === requiredFiles && files.every(f => f.pageNumber)) {
         return "completed";
       }
       return currentPath === "/" ? "active" : "inactive";
     } else if (stepUrl === "/crop") {
-      const crop1 = sessionStorage.getItem("crop1");
-      const crop2 = sessionStorage.getItem("crop2");
-      if (crop1 && crop2) return "completed";
-      return currentPath === "/crop" && files.length === 2 ? "active" : "inactive";
+      const hasRequiredCrops = selectedFormat === 'A4' 
+        ? sessionStorage.getItem("crop1")
+        : sessionStorage.getItem("crop1") && sessionStorage.getItem("crop2");
+      
+      if (hasRequiredCrops) return "completed";
+      return currentPath === "/crop" && files.length === requiredFiles ? "active" : "inactive";
     } else if (stepUrl === "/convert") {
-      return currentPath === "/convert" && sessionStorage.getItem("crop1") && sessionStorage.getItem("crop2") ? "active" : "inactive";
+      const hasRequiredCrops = selectedFormat === 'A4' 
+        ? sessionStorage.getItem("crop1")
+        : sessionStorage.getItem("crop1") && sessionStorage.getItem("crop2");
+      
+      return currentPath === "/convert" && hasRequiredCrops ? "active" : "inactive";
     }
     return "inactive";
+  };
+
+  const canNavigate = (stepUrl: string) => {
+    if (stepUrl === "/") return true;
+    if (stepUrl === "/crop") return files.length === requiredFiles;
+    if (stepUrl === "/convert") {
+      return selectedFormat === 'A4' 
+        ? sessionStorage.getItem("crop1")
+        : sessionStorage.getItem("crop1") && sessionStorage.getItem("crop2");
+    }
+    return false;
   };
 
   const getNavClassName = (stepUrl: string) => {
@@ -57,7 +86,9 @@ export function AppSidebar() {
     if (status === "completed") {
       return `${baseClasses} bg-accent/10 text-accent hover:bg-accent/20`;
     }
-    return `${baseClasses} hover:bg-muted/50 text-muted-foreground ${stepUrl !== "/" && files.length !== 2 ? "opacity-50 pointer-events-none" : ""}`;
+    
+    const disabled = !canNavigate(stepUrl);
+    return `${baseClasses} hover:bg-muted/50 text-muted-foreground ${disabled ? "opacity-50 pointer-events-none" : ""}`;
   };
 
   return (
@@ -69,14 +100,26 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div>
-              <h1 className="font-semibold text-lg">PDF to TIFF</h1>
-              <p className="text-sm text-muted-foreground">Professional Converter</p>
+              <h1 className="font-semibold text-lg">PixPlot</h1>
+              <p className="text-sm text-muted-foreground">PDF to TIFF Converter</p>
             </div>
           )}
         </div>
       </div>
 
       <SidebarContent className="p-4">
+        {!collapsed && (
+          <div className="mb-6 p-3 bg-muted/30 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Settings className="h-4 w-4 text-accent" />
+              <span className="text-sm font-medium">Current Format</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {selectedFormat} • {requiredFiles} PDF{requiredFiles > 1 ? 's' : ''} Required
+            </div>
+          </div>
+        )}
+
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-medium text-muted-foreground mb-4">
             Conversion Steps
@@ -112,17 +155,19 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        
         {!collapsed && (
           <div className="mt-8 p-4 glass rounded-xl">
             <h3 className="font-medium text-sm mb-2">Professional Features</h3>
             <ul className="text-xs space-y-1 text-muted-foreground">
-              <li>• 4:3 Aspect Ratio Cropping</li>
+              <li>• {selectedFormat === 'A4' ? 'Portrait' : '4:3 Aspect Ratio'} Cropping</li>
               <li>• 300+ DPI Output Quality</li>
               <li>• AutoCAD Compatible</li>
               <li>• Monochrome TIFF Export</li>
             </ul>
           </div>
         )}
+        
         <div className="mt-8 p-4 flex justify-center">
           <div className="flex flex-col items-center gap-2">
             <img
